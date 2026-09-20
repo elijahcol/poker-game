@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hold'em Nights — Multiplayer Poker</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>♠ Hold'em Nights</h1>
+  <p class="sub">Realtime Texas Hold'em · 2–4 players per table</p>
+</header>
+
+<!-- 1. NAME -->
+<section id="screen-name" class="card">
+  <h2>1. Enter your name</h2>
+  <div class="row">
+    <input id="nameInput" maxlength="16" placeholder="e.g. Elijah" autocomplete="off">
+    <button id="joinBtn">Join lobby</button>
+  </div>
+  <p class="hint">This is the name other online players will see.</p>
+</section>
+
+<!-- 2. LOBBY -->
+<section id="screen-lobby" class="card hidden">
+  <h2>2. Lobby — <span id="myName"></span></h2>
+  <div class="lobby-grid">
+    <div>
+      <h3>🟢 Online players (<span id="onlineCount">0</span>)</h3>
+      <ul id="onlineList"></ul>
+      <p class="hint">Share your table code with up to 3 friends so they can join you.</p>
+    </div>
+    <div>
+      <h3>🃏 Tables</h3>
+      <div class="row">
+        <input id="tableNameInput" maxlength="30" placeholder="Table name (optional)">
+        <button id="createBtn">Create table</button>
+      </div>
+      <div class="row">
+        <input id="joinCodeInput" maxlength="6" placeholder="CODE e.g. X7K2PQ" style="text-transform:uppercase">
+        <button id="joinCodeBtn">Join by code</button>
+      </div>
+      <ul id="tableList"></ul>
+    </div>
+  </div>
+</section>
+
+<!-- 3. GAME -->
+<section id="screen-game" class="card hidden">
+  <div class="game-top">
+    <div><strong id="gameTitle"></strong> <span id="gameCode" class="code"></span></div>
+    <div class="row">
+      <button id="startBtn">▶ Start hand</button>
+      <button id="leaveBtn" class="ghost">Leave table</button>
+    </div>
+  </div>
+  <p id="gameMsg" class="msg"></p>
+  <div id="board">
+    <div>Community (<span id="streetLabel"></span>)</div>
+    <div id="community" class="cards"></div>
+    <div id="potLine">Pot: <strong id="potVal">0</strong></div>
+    <div id="winnersBox"></div>
+  </div>
+  <div id="seats"></div>
+  <div id="actions" class="row">
+    <button data-act="fold">Fold</button>
+    <button data-act="check">Check / Call</button>
+    <button data-act="allin" class="danger">All-in</button>
+    <input id="raiseAmt" type="number" min="40" step="10" placeholder="raise to">
+    <button data-act="raise">Raise</button>
+  </div>
+  <p class="hint">Blinds 10/20 · Start stack 1000 · 60s turn timer · Fair side-pots, split ties evenly.</p>
+</section>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="client.js"></script>
+</body>
+</html>
