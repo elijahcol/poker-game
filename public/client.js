@@ -1,4 +1,5 @@
-const socket = io();
+const BACKEND = (window.BACKEND_URL || '').trim();
+const socket = BACKEND ? io(BACKEND, { transports: ['websocket', 'polling'] }) : io();
 let myName = '';
 let currentTableId = null;
 let lastState = null;

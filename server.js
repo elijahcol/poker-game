@@ -570,4 +570,7 @@ function leaveAllTables(socket) {
   }
 }
 
-server.listen(PORT, () => console.log(`Poker server running on port ${PORT}`));
+if (require.main === module) {
+  server.listen(PORT, () => console.log(`Poker server running on port ${PORT}`));
+}
+module.exports = { app, server };

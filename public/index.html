@@ -73,7 +73,15 @@
   <p class="hint">Blinds 10/20 · Start stack 1000 · 60s turn timer · Fair side-pots, split ties evenly.</p>
 </section>
 
-<script src="/socket.io/socket.io.js"></script>
+<script src="config.js"></script>
+<script id="sio" src="/socket.io/socket.io.js"></script>
+<script>
+  // If BACKEND_URL is set (Vercel frontend + Render backend), load socket.io from backend
+  (function () {
+    var b = (window.BACKEND_URL || '').trim();
+    if (b) document.getElementById('sio').src = b + '/socket.io/socket.io.js';
+  })();
+</script>
 <script src="client.js"></script>
 </body>
 </html>

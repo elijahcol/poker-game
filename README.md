@@ -32,7 +32,25 @@ git remote add origin https://github.com/YOURUSERNAME/poker-game.git
 git push -u origin main
 ```
 
-## Deploy on Render (free)
+## Deploy on Vercel + Render (recommended for realtime)
+
+Vercel alone can't run this game server — it's serverless with no persistent
+WebSocket connections, so tables would disconnect. Split it:
+
+1. **Backend (game server) → Render free:**
+   Dashboard → New Web Service → pick this repo →
+   Build `npm install`, Start `npm start`.
+   You'll get e.g. `https://poker-game-xxxx.onrender.com`
+2. **Frontend → Vercel:**
+   - In `public/config.js` set:
+     `window.BACKEND_URL = "https://poker-game-xxxx.onrender.com";`
+     commit + push.
+   - Go to https://vercel.com/new → Import `elijahcol/poker-game` →
+     Framework: Other, Output Directory: `public`, Build: none → Deploy.
+   - Share the `https://poker-game-xxx.vercel.app` URL with friends.
+   - Local dev still works with `BACKEND_URL = ""` (same origin).
+
+## Deploy backend-only on Render (free)
 1. Push to GitHub as above
 2. Go to https://dashboard.render.com → **New + → Web Service**
 3. Select your `poker-game` repo
