@@ -1,10 +1,11 @@
 {
   "name": "poker-game",
   "version": "1.0.0",
-  "description": "Realtime multiplayer Texas Hold'em (2-4 players) - Render ready",
+  "description": "Realtime multiplayer Texas Hold'em (2-9 players) - Royale Poker VIP lounge",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node test-engine.js && node test-live.js"
   },
   "engines": {
     "node": ">=18"

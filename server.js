@@ -11,7 +11,9 @@ const PORT = process.env.PORT || 3000;
 const START_CHIPS = 1000;
 const SMALL_BLIND = 10;
 const BIG_BLIND = 20;
-const MAX_PLAYERS = 4;
+const MAX_PLAYERS = 9;
+const TURN_MS = 60000;
+const BLIND_PRESETS = [{ sb: 10, bb: 20 }, { sb: 25, bb: 50 }, { sb: 50, bb: 100 }];
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/health', (req, res) => res.send('ok'));
@@ -75,12 +77,6 @@ function compareScore(a, b) {
 
 function evaluate7(cards7) {
   let best = null;
-  // all 21 combos of 5 from 7
-  for (let a = 0; a < 5; a++) for (let b = a + 1; b < 6; b++) for (let c = b + 1; c < 7; c++) {
-    // instead: choose 5 to keep = skip 2
-    // simpler brute force below
-  }
-  // brute force: pick indices
   const n = cards7.length;
   for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) for (let k = j + 1; k < n; k++)
     for (let l = k + 1; l < n; l++) for (let m = l + 1; m < n; m++) {
@@ -126,24 +122,32 @@ function lobbyData() {
     online: [...users.entries()].map(([id, u]) => ({ id, name: u.name })),
     tables: [...tables.values()].map(t => ({
       id: t.id, name: t.name, count: t.players.length,
-      max: MAX_PLAYERS, state: t.state, host: t.players[0] ? t.players[0].name : ''
+      max: MAX_PLAYERS, state: t.state, host: t.players[0] ? t.players[0].name : '',
+      sb: t.smallBlind, bb: t.bigBlind
     }))
   };
 }
 function broadcastLobby() { io.emit('lobbyUpdate', lobbyData()); }
 
 function tableView(table, forSocketId) {
+  const me = table.players.find(p => p.socketId === forSocketId);
   return {
     id: table.id, name: table.name, state: table.state,
     community: table.community, street: table.street,
     pot: totalPot(table), sidePots: table.showdownPots || [],
-    currentBet: table.currentBet, turnSocketId: table.turnSocketId,
+    currentBet: table.currentBet, minRaise: table.minRaise,
+    blinds: { sb: table.smallBlind, bb: table.bigBlind },
+    toCall: me ? Math.max(0, table.currentBet - me.bet) : 0,
+    turnSocketId: table.turnSocketId, turnDeadline: table.turnDeadline || null,
     dealerSocketId: table.players[table.dealerIdx] ? table.players[table.dealerIdx].socketId : null,
     winnersInfo: table.winnersInfo || null,
     message: table.message || '',
+    history: (table.history || []).slice(-30),
+    chat: (table.chat || []).slice(-50),
+    maxPlayers: MAX_PLAYERS,
     players: table.players.map((p, i) => ({
       socketId: p.socketId, name: p.name, chips: p.chips, bet: p.bet,
-      folded: p.folded, allIn: p.allIn, acted: p.acted,
+      folded: p.folded, allIn: p.allIn, acted: p.acted, sittingOut: !!p.sittingOut,
       isTurn: p.socketId === table.turnSocketId,
       isDealer: i === table.dealerIdx,
       isMe: p.socketId === forSocketId,
@@ -153,6 +157,13 @@ function tableView(table, forSocketId) {
   };
 }
 function emitTable(table) {
+  // append new messages to hand history
+  if (table.message && table.message !== table._lastMsg) {
+    table.history = table.history || [];
+    table.history.push(table.message);
+    if (table.history.length > 100) table.history = table.history.slice(-100);
+    table._lastMsg = table.message;
+  }
   for (const p of table.players) {
     io.to(p.socketId).emit('tableUpdate', tableView(table, p.socketId));
   }
@@ -165,7 +176,7 @@ function emitTable(table) {
   }
 }
 function totalPot(table) {
-  return table.players.reduce((s, p) => s + p.handTotal, 0);
+  return table.players.reduce((s, p) => s + p.handTotal, 0) + (table.deadMoney || 0);
 }
 
 function nextActiveIndex(table, fromIdx) {
@@ -181,19 +192,23 @@ function countActive(table) { return table.players.filter(p => !p.folded && !p.a
 function countUnfolded(table) { return table.players.filter(p => !p.folded).length; }
 
 function startHand(table) {
-  // rebuy broke players
+  const SB = table.smallBlind || SMALL_BLIND;
+  const BB = table.bigBlind || BIG_BLIND;
+  // rebuy broke players; seat waiting players
   for (const p of table.players) {
-    if (p.chips < BIG_BLIND) p.chips = START_CHIPS;
-    p.cards = []; p.bet = 0; p.handTotal = 0; p.folded = false; p.allIn = false; p.acted = false; p.handName = null;
+    if (p.chips < BB) { p.chips = START_CHIPS; p.rebought = true; }
+    p.cards = []; p.bet = 0; p.handTotal = 0; p.folded = false; p.allIn = false; p.acted = false; p.handName = null; p.sittingOut = false;
   }
-  if (table.players.length < 2) { table.message = 'Need at least 2 players to start.'; emitTable(table); return; }
+  table.deadMoney = 0;
+  const seated = table.players.filter(p => !p.sittingOut);
+  if (seated.length < 2) { table.message = 'Need at least 2 players to start.'; emitTable(table); return; }
 
   table.state = 'playing';
   table.deck = createDeck();
   table.community = [];
   table.street = 'preflop';
-  table.currentBet = BIG_BLIND;
-  table.minRaise = BIG_BLIND;
+  table.currentBet = BB;
+  table.minRaise = BB;
   table.winnersInfo = null;
   table.showdownPots = [];
 
@@ -213,8 +228,8 @@ function startHand(table) {
     p.chips -= pay; p.bet += pay; p.handTotal += pay;
     if (p.chips === 0) p.allIn = true;
   };
-  post(sbIdx, SMALL_BLIND);
-  post(bbIdx, BIG_BLIND);
+  post(sbIdx, SB);
+  post(bbIdx, BB);
 
   // deal
   for (let r = 0; r < 2; r++) for (let i = 0; i < n; i++) table.players[i].cards.push(table.deck.pop());
@@ -227,7 +242,7 @@ function startHand(table) {
 
   table.turnIdx = nextActiveIndex(table, bbIdx);
   table.turnSocketId = table.turnIdx >= 0 ? table.players[table.turnIdx].socketId : null;
-  table.message = `Hand #${table.handCount} — ${table.players[sbIdx].name} posts SB ${SMALL_BLIND}, ${table.players[bbIdx].name} posts BB ${BIG_BLIND}`;
+  table.message = `Hand #${table.handCount} — ${table.players[sbIdx].name} posts SB ${SB}, ${table.players[bbIdx].name} posts BB ${BB}`;
 
   if (table.turnIdx === -1) return finishBettingRound(table); // everyone all-in from blinds (rare)
   emitTable(table);
@@ -238,7 +253,8 @@ let timers = new Map();
 function clearTimer(tableId) { if (timers.has(tableId)) { clearTimeout(timers.get(tableId)); timers.delete(tableId); } }
 function startTurnTimer(table) {
   clearTimer(table.id);
-  // 60s auto-fold/check safety
+  table.turnDeadline = Date.now() + TURN_MS;
+  // auto-fold/check safety
   const t = setTimeout(() => {
     const idx = table.turnIdx;
     if (idx < 0 || table.state !== 'playing') return;
@@ -246,7 +262,7 @@ function startTurnTimer(table) {
     if (!p || p.folded || p.allIn) return;
     if (p.bet < table.currentBet) doFold(table, idx, true);
     else doCheck(table, idx, true);
-  }, 60000);
+  }, TURN_MS);
   timers.set(table.id, t);
 }
 
@@ -269,8 +285,9 @@ function moveBetsToPotStreet(table) {
   // bets stay in handTotal for side-pot math; just reset per-street bet
   table.players.forEach(p => { p.bet = 0; p.acted = false; });
   table.currentBet = 0;
-  table.minRaise = BIG_BLIND;
+  table.minRaise = table.bigBlind || BIG_BLIND;
   table.turnSocketId = null;
+  table.turnDeadline = null;
 }
 
 function finishBettingRound(table) {
@@ -310,9 +327,11 @@ function finishBettingRound(table) {
 
 function awardToLastStanding(table) {
   clearTimer(table.id);
+  table.turnDeadline = null;
   const winner = table.players.find(p => !p.folded);
   const pot = totalPot(table);
   winner.chips += pot;
+  table.deadMoney = 0;
   table.state = 'showdown';
   table.turnSocketId = null;
   table.winnersInfo = { text: `${winner.name} wins ${pot} (everyone else folded)`, winners: [{ name: winner.name, amount: pot, hand: '—' }] };
@@ -323,11 +342,15 @@ function awardToLastStanding(table) {
 
 function doShowdown(table) {
   clearTimer(table.id);
+  table.turnDeadline = null;
   table.state = 'showdown';
   table.turnSocketId = null;
 
   const contribs = table.players.map((p, idx) => ({ idx, amount: p.handTotal, folded: p.folded }));
   const pots = buildSidePots(contribs);
+  // orphaned chips from players who left mid-hand go to the main pot
+  if (table.deadMoney > 0 && pots.length > 0) pots[0].amount += table.deadMoney;
+  table.deadMoney = 0;
 
   // evaluate unfolded players
   const evals = new Map();
@@ -460,16 +483,25 @@ io.on('connection', (socket) => {
     broadcastLobby();
   });
 
-  socket.on('createTable', (tableName, cb) => {
+  socket.on('createTable', (opts, cb) => {
     const user = users.get(socket.id);
     if (!user) return cb && cb({ ok: false, error: 'Set your name first' });
     leaveAllTables(socket);
+    // accept string name (legacy) or { name, sb, bb }
+    let tableName = `${user.name}'s game`, sb = SMALL_BLIND, bb = BIG_BLIND;
+    if (typeof opts === 'string') tableName = opts || tableName;
+    else if (opts && typeof opts === 'object') {
+      tableName = String(opts.name || tableName).slice(0, 30);
+      const preset = BLIND_PRESETS.find(p => p.sb === +opts.sb && p.bb === +opts.bb);
+      if (preset) { sb = preset.sb; bb = preset.bb; }
+    }
     const id = makeTableId();
     const table = {
-      id, name: String(tableName || `${user.name}'s game`).slice(0, 30) || 'Poker Table',
-      players: [{ socketId: socket.id, name: user.name, chips: START_CHIPS, bet: 0, handTotal: 0, cards: [], folded: false, allIn: false, acted: false }],
-      state: 'waiting', deck: [], community: [], currentBet: 0, minRaise: BIG_BLIND,
-      dealerIdx: 0, turnIdx: -1, turnSocketId: null, street: '', handCount: 0, message: 'Waiting for players… (2–4 to start)'
+      id, name: tableName || 'Poker Table', smallBlind: sb, bigBlind: bb,
+      players: [{ socketId: socket.id, name: user.name, chips: START_CHIPS, bet: 0, handTotal: 0, cards: [], folded: false, allIn: false, acted: false, sittingOut: false }],
+      state: 'waiting', deck: [], community: [], currentBet: 0, minRaise: bb, deadMoney: 0,
+      dealerIdx: 0, turnIdx: -1, turnSocketId: null, turnDeadline: null, street: '', handCount: 0,
+      history: [], chat: [], message: `Welcome to ${tableName} — blinds ${sb}/${bb}. Waiting for players… (2–9 to start)`
     };
     tables.set(id, table);
     socket.join(id);
@@ -484,15 +516,35 @@ io.on('connection', (socket) => {
     const table = tables.get(String(tableId || '').toUpperCase());
     if (!table) return cb && cb({ ok: false, error: 'Table not found' });
     if (table.players.find(p => p.socketId === socket.id)) { socket.join(table.id); return cb && cb({ ok: true, tableId: table.id }); }
-    if (table.players.length >= MAX_PLAYERS) return cb && cb({ ok: false, error: 'Table is full (4 max)' });
-    if (table.state === 'playing') return cb && cb({ ok: false, error: 'Hand in progress — wait for it to finish' });
+    if (table.players.length >= MAX_PLAYERS) return cb && cb({ ok: false, error: `Table is full (${MAX_PLAYERS} max)` });
     leaveAllTables(socket);
-    table.players.push({ socketId: socket.id, name: user.name, chips: START_CHIPS, bet: 0, handTotal: 0, cards: [], folded: false, allIn: false, acted: false });
-    socket.join(table.id);
-    table.message = `${user.name} joined. (${table.players.length}/${MAX_PLAYERS})`;
-    cb && cb({ ok: true, tableId: table.id });
+    if (table.state === 'playing') {
+      // join as waiting for next hand — dealt in automatically
+      table.players.push({ socketId: socket.id, name: user.name, chips: START_CHIPS, bet: 0, handTotal: 0, cards: [], folded: true, allIn: false, acted: true, sittingOut: true });
+      socket.join(table.id);
+      table.message = `${user.name} joined — dealt in next hand. (${table.players.length}/${MAX_PLAYERS})`;
+      cb && cb({ ok: true, tableId: table.id, sittingOut: true });
+    } else {
+      table.players.push({ socketId: socket.id, name: user.name, chips: START_CHIPS, bet: 0, handTotal: 0, cards: [], folded: false, allIn: false, acted: false, sittingOut: false });
+      socket.join(table.id);
+      table.message = `${user.name} joined. (${table.players.length}/${MAX_PLAYERS})`;
+      cb && cb({ ok: true, tableId: table.id });
+    }
     emitTable(table);
     broadcastLobby();
+  });
+
+  socket.on('chat', ({ tableId, text }) => {
+    const user = users.get(socket.id);
+    const table = tables.get(String(tableId || '').toUpperCase());
+    if (!user || !table) return;
+    if (!table.players.find(p => p.socketId === socket.id)) return;
+    text = String(text || '').trim().slice(0, 200);
+    if (!text) return;
+    table.chat = table.chat || [];
+    table.chat.push({ name: user.name, text, ts: Date.now() });
+    if (table.chat.length > 50) table.chat = table.chat.slice(-50);
+    emitTable(table);
   });
 
   socket.on('leaveTable', () => {
@@ -503,7 +555,8 @@ io.on('connection', (socket) => {
   socket.on('startGame', (tableId, cb) => {
     const table = tables.get(String(tableId || '').toUpperCase());
     if (!table) return cb && cb({ ok: false, error: 'Table not found' });
-    if (table.players[0].socketId !== socket.id) return cb && cb({ ok: false, error: 'Only host can start' });
+    if (!table.players.length || table.players[0].socketId !== socket.id) return cb && cb({ ok: false, error: 'Only host can start' });
+    if (table.state === 'playing') return cb && cb({ ok: false, error: 'Hand already in progress' });
     if (table.players.length < 2) return cb && cb({ ok: false, error: 'Need at least 2 players' });
     cb && cb({ ok: true });
     startHand(table);
@@ -530,14 +583,17 @@ io.on('connection', (socket) => {
 
   socket.on('getLobby', () => socket.emit('lobbyUpdate', lobbyData()));
 
+  socket.on('pingCheck', (cb) => { if (typeof cb === 'function') cb(Date.now()); });
+
   socket.on('disconnect', () => {
     users.delete(socket.id);
-    // remove from tables; fold them if mid-hand
+    // remove from tables; keep their bets in the pot (dead money)
     for (const [id, table] of tables) {
       const idx = table.players.findIndex(p => p.socketId === socket.id);
       if (idx !== -1) {
         const wasTurn = table.turnSocketId === socket.id;
-        table.players.splice(idx, 1);
+        const [gone] = table.players.splice(idx, 1);
+        if (table.state === 'playing' && gone && gone.handTotal > 0) table.deadMoney = (table.deadMoney || 0) + gone.handTotal;
         if (table.players.length === 0) { tables.delete(id); clearTimer(id); continue; }
         if (table.dealerIdx >= table.players.length) table.dealerIdx = 0;
         if (table.state === 'playing') {
@@ -545,7 +601,7 @@ io.on('connection', (socket) => {
           else if (wasTurn) { table.turnIdx = (idx - 1 + table.players.length) % table.players.length; advanceAfterAction(table); }
           else emitTable(table);
         } else {
-          table.message = 'Player left.';
+          table.message = `${gone ? gone.name : 'Player'} left.`;
           emitTable(table);
         }
       }
@@ -554,23 +610,37 @@ io.on('connection', (socket) => {
   });
 });
 
-function leaveAllTables(socket) {
-  for (const [id, table] of tables) {
-    const idx = table.players.findIndex(p => p.socketId === socket.id);
-    if (idx !== -1) {
-      socket.leave(id);
-      table.players.splice(idx, 1);
-      if (table.players.length === 0) { tables.delete(id); clearTimer(id); }
-      else {
-        if (table.dealerIdx >= table.players.length) table.dealerIdx = 0;
-        table.message = 'Player left.';
-        emitTable(table);
+function removeFromTable(table, socket, silent) {
+  const idx = table.players.findIndex(p => p.socketId === socket.id);
+  if (idx === -1) return false;
+  const wasTurn = table.turnSocketId === socket.id;
+  socket.leave(table.id);
+  const [gone] = table.players.splice(idx, 1);
+  if (table.state === 'playing' && gone && gone.handTotal > 0) table.deadMoney = (table.deadMoney || 0) + gone.handTotal;
+  if (table.players.length === 0) { tables.delete(table.id); clearTimer(table.id); return true; }
+  if (table.dealerIdx >= table.players.length) table.dealerIdx = 0;
+  if (!silent) {
+    table.message = `${gone ? gone.name : 'Player'} left.`;
+    if (table.state === 'playing') {
+      if (countUnfolded(table) === 1) awardToLastStanding(table);
+      else if (wasTurn && table.players.length) {
+        table.turnIdx = (idx - 1 + table.players.length) % table.players.length;
+        advanceAfterAction(table);
       }
+      else emitTable(table);
     }
+    else emitTable(table);
+  }
+  return true;
+}
+
+function leaveAllTables(socket) {
+  for (const [id, table] of [...tables]) {
+    removeFromTable(table, socket);
   }
 }
 
 if (require.main === module) {
   server.listen(PORT, () => console.log(`Poker server running on port ${PORT}`));
 }
-module.exports = { app, server };
+module.exports = { app, server, eval5, evaluate7, compareScore, buildSidePots, createDeck };

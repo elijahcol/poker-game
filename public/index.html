@@ -3,80 +3,146 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hold'em Nights — Multiplayer Poker</title>
+<title>ROYALE POKER — VIP Lounge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
-  <h1>♠ Hold'em Nights</h1>
-  <p class="sub">Realtime Texas Hold'em · 2–4 players per table</p>
+<div class="velvet-bg"></div>
+
+<header class="topbar glass">
+  <div class="logo">♛ ROYALE <span>POKER</span></div>
+  <div class="top-right">
+    <div id="connPill" class="pill"><span class="dot"></span><span id="connText">connecting…</span></div>
+    <div id="balPill" class="pill gold hidden">◉ <span id="balVal">1,000</span></div>
+    <div id="avatar" class="avatar hidden">?</div>
+  </div>
 </header>
 
-<!-- 1. NAME -->
-<section id="screen-name" class="card">
-  <h2>1. Enter your name</h2>
-  <div class="row">
-    <input id="nameInput" maxlength="16" placeholder="e.g. Elijah" autocomplete="off">
-    <button id="joinBtn">Join lobby</button>
-  </div>
-  <p class="hint">This is the name other online players will see.</p>
-</section>
-
-<!-- 2. LOBBY -->
-<section id="screen-lobby" class="card hidden">
-  <h2>2. Lobby — <span id="myName"></span></h2>
-  <div class="lobby-grid">
-    <div>
-      <h3>🟢 Online players (<span id="onlineCount">0</span>)</h3>
-      <ul id="onlineList"></ul>
-      <p class="hint">Share your table code with up to 3 friends so they can join you.</p>
-    </div>
-    <div>
-      <h3>🃏 Tables</h3>
-      <div class="row">
-        <input id="tableNameInput" maxlength="30" placeholder="Table name (optional)">
-        <button id="createBtn">Create table</button>
-      </div>
-      <div class="row">
-        <input id="joinCodeInput" maxlength="6" placeholder="CODE e.g. X7K2PQ" style="text-transform:uppercase">
-        <button id="joinCodeBtn">Join by code</button>
-      </div>
-      <ul id="tableList"></ul>
-    </div>
-  </div>
-</section>
-
-<!-- 3. GAME -->
-<section id="screen-game" class="card hidden">
-  <div class="game-top">
-    <div><strong id="gameTitle"></strong> <span id="gameCode" class="code"></span></div>
+<main>
+  <!-- ============ NAME GATE ============ -->
+  <section id="screen-name" class="gate glass">
+    <div class="gate-kicker">Members only</div>
+    <h1>Step into the <em>Velvet Room</em></h1>
+    <p class="muted">Enter your alias. Up to 9 players per table, live.</p>
     <div class="row">
-      <button id="startBtn">▶ Start hand</button>
-      <button id="leaveBtn" class="ghost">Leave table</button>
+      <input id="nameInput" maxlength="16" placeholder="Your alias, e.g. VelvetFox" autocomplete="off">
+      <button id="joinBtn" class="btn-gold">Enter Lounge →</button>
     </div>
-  </div>
-  <p id="gameMsg" class="msg"></p>
-  <div id="board">
-    <div>Community (<span id="streetLabel"></span>)</div>
-    <div id="community" class="cards"></div>
-    <div id="potLine">Pot: <strong id="potVal">0</strong></div>
-    <div id="winnersBox"></div>
-  </div>
-  <div id="seats"></div>
-  <div id="actions" class="row">
-    <button data-act="fold">Fold</button>
-    <button data-act="check">Check / Call</button>
-    <button data-act="allin" class="danger">All-in</button>
-    <input id="raiseAmt" type="number" min="40" step="10" placeholder="raise to">
-    <button data-act="raise">Raise</button>
-  </div>
-  <p class="hint">Blinds 10/20 · Start stack 1000 · 60s turn timer · Fair side-pots, split ties evenly.</p>
-</section>
+  </section>
+
+  <!-- ============ LOBBY ============ -->
+  <section id="screen-lobby" class="hidden">
+    <div class="bento">
+      <div class="bento-card glass span2">
+        <div class="kicker">Tonight in the lounge</div>
+        <h2>Choose your table, <span id="myName" class="gold-text"></span></h2>
+        <div class="row wrap">
+          <div class="field"><label>Table name</label><input id="tableNameInput" maxlength="30" placeholder="e.g. Midnight Aces"></div>
+          <div class="field"><label>Stakes</label>
+            <div class="seg" id="blindsSeg">
+              <button data-sb="10" data-bb="20" class="on">Lounge 10/20</button>
+              <button data-sb="25" data-bb="50">High Rollers 25/50</button>
+              <button data-sb="50" data-bb="100">Blitz 50/100</button>
+            </div>
+          </div>
+          <button id="createBtn" class="btn-gold">+ Open Table</button>
+        </div>
+        <div class="row">
+          <input id="joinCodeInput" maxlength="6" placeholder="Have a code? e.g. X7K2PQ" style="text-transform:uppercase">
+          <button id="joinCodeBtn" class="btn-ghost">Join by code</button>
+        </div>
+      </div>
+      <div class="bento-card glass">
+        <div class="kicker">🟢 Online now · <span id="onlineCount">0</span></div>
+        <div id="onlineList" class="avatar-row"></div>
+        <p class="muted small">Share a table code with friends to fill seats.</p>
+      </div>
+      <div class="bento-card glass span2">
+        <div class="kicker">🃏 Active tables</div>
+        <div id="tableList" class="tables"></div>
+      </div>
+      <div class="bento-card glass">
+        <div class="kicker">House rules</div>
+        <ul class="rules">
+          <li>Blinds posted automatically · 60s turns</li>
+          <li>Fair side-pots · ties split evenly</li>
+          <li>Broke? Auto rebuy to 1,000</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TABLE ============ -->
+  <section id="screen-game" class="hidden">
+    <div class="table-layout">
+      <div class="felt-zone">
+        <div class="table-top glass">
+          <div><strong id="gameTitle"></strong> <span id="gameBlinds" class="pill"></span></div>
+          <div class="row">
+            <span id="gameCode" class="code"></span>
+            <button id="copyCodeBtn" class="btn-ghost small">Copy invite</button>
+            <button id="leaveBtn" class="btn-ghost small">Leave</button>
+          </div>
+        </div>
+        <p id="gameMsg" class="msg glass"></p>
+        <div class="felt-wrap" id="feltWrap">
+          <div class="felt-oval">
+            <div class="felt-inner">
+              <div id="community" class="cards"></div>
+              <div id="potLine">POT <strong id="potVal">0</strong></div>
+              <div id="streetLabel" class="street"></div>
+            </div>
+          </div>
+          <div id="seats"></div>
+        </div>
+        <div id="winnersBox"></div>
+        <!-- Bottom HUD dock -->
+        <div id="hud" class="hud glass">
+          <div class="hud-status"><span id="turnLabel">Waiting…</span><span id="timer" class="timer"></span></div>
+          <div class="hud-controls">
+            <button id="btnFold" class="btn-felt">FOLD</button>
+            <button id="btnCheckCall" class="btn-felt primary">CHECK</button>
+            <div class="raisebox">
+              <input id="raiseSlider" type="range" min="40" max="1000" step="10" value="40">
+              <div class="raise-row">
+                <div class="quick">
+                  <button data-q="min">Min</button>
+                  <button data-q="half">½ Pot</button>
+                  <button data-q="pot">Pot</button>
+                  <button data-q="max">Max</button>
+                </div>
+                <button id="btnRaise" class="btn-gold">Raise to <span id="raiseVal">40</span></button>
+                <button id="btnAllin" class="btn-danger">ALL-IN</button>
+              </div>
+            </div>
+          </div>
+          <button id="startBtn" class="btn-gold hidden">▶ Start hand</button>
+        </div>
+      </div>
+      <aside class="side glass">
+        <div class="tabs">
+          <button id="tabHist" class="on">Hand history</button>
+          <button id="tabChat">Chat <span id="chatBadge" class="badge hidden"></span></button>
+        </div>
+        <div id="historyBox" class="scrollbox"></div>
+        <div id="chatBox" class="scrollbox hidden"></div>
+        <div class="row chat-row">
+          <input id="chatInput" maxlength="200" placeholder="Table talk…">
+          <button id="chatSend" class="btn-gold">➤</button>
+        </div>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast hidden"></div>
 
 <script src="config.js"></script>
 <script id="sio" src="/socket.io/socket.io.js"></script>
 <script>
-  // If BACKEND_URL is set (Vercel frontend + Render backend), load socket.io from backend
   (function () {
     var b = (window.BACKEND_URL || '').trim();
     if (b) document.getElementById('sio').src = b + '/socket.io/socket.io.js';
